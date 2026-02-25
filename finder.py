@@ -19,12 +19,23 @@ COMMON_NAMES = [
     "skyblock","bedwars","lifesteal","network"
 ]
 
+# Only these servers will be logged (even if others are found)
+WHITELIST = {
+    "play.minefort.com",
+    "mc.minefort.com",
+    "survival.minefort.com"
+}
+
 seen_servers = set()
 lock = threading.Lock()
 
 def generate_name():
     base = random.choice(COMMON_NAMES)
     return f"{base}{random.randint(1,999)}"
+
+def is_whitelisted(address: str) -> bool:
+    address = address.lower()
+    return address in WHITELIST
 
 def send_to_api(address, online, max_players, version):
     payload = {
@@ -52,7 +63,11 @@ def scan():
             domain = random.choice(DOMAINS)
             address = f"{name}.{domain}".lower()
 
-            # Quick pre-check (fast skip)
+            # Skip instantly if not whitelisted (VERY IMPORTANT)
+            if not is_whitelisted(address):
+                continue
+
+            # Prevent duplicate logs
             with lock:
                 if address in seen_servers:
                     continue
@@ -62,28 +77,23 @@ def scan():
 
             if not status:
                 continue
-
             if status.players.max == 0:
-                continue
-
-            # Only log real Minefort servers
-            if not address.endswith(".minefort.com"):
                 continue
 
             version = status.version.name if status.version else "unknown"
 
-            # FINAL duplicate protection (thread-safe)
+            # Final duplicate protection (thread-safe)
             with lock:
                 if address in seen_servers:
                     continue
                 seen_servers.add(address)
 
-            print(f"[FOUND MINEFORT] {address} | {status.players.online}/{status.players.max} | {version}")
+            print(f"[WHITELIST LOGGED] {address} | {status.players.online}/{status.players.max} | {version}")
 
             send_to_api(address, status.players.online, status.players.max, version)
 
         except Exception:
-            continue  # NEVER use return here
+            continue
 
 def main():
     for _ in range(THREADS):
