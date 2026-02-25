@@ -11,8 +11,7 @@ THREADS = 25
 TIMEOUT = 2
 
 DOMAINS = [
-    "aternos.me",
-    "aternos.org"
+    "minefort.com"
 ]
 
 COMMON_NAMES = [
