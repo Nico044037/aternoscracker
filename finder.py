@@ -19,7 +19,6 @@ COMMON_NAMES = [
     "skyblock","bedwars","lifesteal","network"
 ]
 
-# Thread-safe storage for seen servers
 seen_servers = set()
 lock = threading.Lock()
 
@@ -47,48 +46,48 @@ def send_to_api(address, online, max_players, version):
         print(f"[API FAILED] {address} -> {e}")
 
 def scan():
-    global seen_servers
-
     while True:
         try:
             name = generate_name()
             domain = random.choice(DOMAINS)
-            address = f"{name}.{domain}"
+            address = f"{name}.{domain}".lower()
 
-            # Prevent duplicate scans/logs
+            # Quick pre-check (fast skip)
             with lock:
                 if address in seen_servers:
                     continue
-                seen_servers.add(address)
 
             server = JavaServer.lookup(address, timeout=TIMEOUT)
             status = server.status()
 
-            # Skip invalid or empty servers
-            if not status or status.players.max == 0:
-                return
-            if status.players.online == 0 and status.players.max == 0:
-                return
+            if not status:
+                continue
+
+            if status.players.max == 0:
+                continue
+
+            # Only log real Minefort servers
+            if not address.endswith(".minefort.com"):
+                continue
 
             version = status.version.name if status.version else "unknown"
 
-            # Extra Minefort validation (ensures it's really a Minefort host)
-            if not address.endswith(".minefort.com"):
-                return
+            # FINAL duplicate protection (thread-safe)
+            with lock:
+                if address in seen_servers:
+                    continue
+                seen_servers.add(address)
 
             print(f"[FOUND MINEFORT] {address} | {status.players.online}/{status.players.max} | {version}")
 
             send_to_api(address, status.players.online, status.players.max, version)
 
         except Exception:
-            pass
+            continue  # NEVER use return here
 
 def main():
-    threads = []
     for _ in range(THREADS):
-        t = threading.Thread(target=scan, daemon=True)
-        t.start()
-        threads.append(t)
+        threading.Thread(target=scan, daemon=True).start()
 
     while True:
         time.sleep(10)
