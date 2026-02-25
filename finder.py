@@ -18,6 +18,11 @@ COMMON_NAMES = [
     "mc","play","survival","pvp","smp","lobby",
     "skyblock","bedwars","lifesteal","network"
 ]
+
+# Thread-safe storage for seen servers
+seen_servers = set()
+lock = threading.Lock()
+
 def generate_name():
     base = random.choice(COMMON_NAMES)
     return f"{base}{random.randint(1,999)}"
@@ -39,34 +44,51 @@ def send_to_api(address, online, max_players, version):
         r = requests.post(API_URL, json=payload, headers=headers, timeout=5)
         print(f"[API {r.status_code}] {address}")
     except Exception as e:
-        print(f"[API FAILED] {e}")
+        print(f"[API FAILED] {address} -> {e}")
 
 def scan():
+    global seen_servers
+
     while True:
         try:
             name = generate_name()
             domain = random.choice(DOMAINS)
             address = f"{name}.{domain}"
 
+            # Prevent duplicate scans/logs
+            with lock:
+                if address in seen_servers:
+                    continue
+                seen_servers.add(address)
+
             server = JavaServer.lookup(address, timeout=TIMEOUT)
             status = server.status()
 
-            if status.players.max == 0:
-                continue
+            # Skip invalid or empty servers
+            if not status or status.players.max == 0:
+                return
             if status.players.online == 0 and status.players.max == 0:
-                continue
+                return
 
             version = status.version.name if status.version else "unknown"
-            print(f"[FOUND] {address}")
+
+            # Extra Minefort validation (ensures it's really a Minefort host)
+            if not address.endswith(".minefort.com"):
+                return
+
+            print(f"[FOUND MINEFORT] {address} | {status.players.online}/{status.players.max} | {version}")
 
             send_to_api(address, status.players.online, status.players.max, version)
 
-        except:
+        except Exception:
             pass
 
 def main():
+    threads = []
     for _ in range(THREADS):
-        threading.Thread(target=scan, daemon=True).start()
+        t = threading.Thread(target=scan, daemon=True)
+        t.start()
+        threads.append(t)
 
     while True:
         time.sleep(10)
